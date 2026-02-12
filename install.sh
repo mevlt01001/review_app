@@ -15,7 +15,10 @@ if ! command -v conda &> /dev/null; then
 else
     sudo apt update && sudo apt install -y git curl wget libclang-dev clang
     echo "Packages completed."
-
+    
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+    
     if conda info --envs | grep -q "$ENV_NAME"; then
         echo "Environment '$ENV_NAME' already exists, updating..."
     else
@@ -27,13 +30,26 @@ fi
 CONDA_BASE=$(conda info --base)
 PIP_PATH="$CONDA_BASE/envs/$ENV_NAME/bin/pip"
 PYTHON_PATH="$CONDA_BASE/envs/$ENV_NAME/bin/python"
-ALIAS_CMD="alias review-app='$PYTHON_PATH $LIB_PATH'" 
+ALIAS_CMD="alias review-app='$PYTHON_PATH $APP_PATH'" 
+
+echo "CONDA_BASE: $CONDA_BASE"
+echo "PIP_PATH: $PIP_PATH"
+echo "PYTHON_PATH: $PYTHON_PATH"
+echo "ALIAS_CMD: $ALIAS_CMD"
 
 # Environment'ı aktif et ve paketleri kur
-conda activate "$ENV_NAME"
+
 echo "$ENV_NAME packages creating..."
-PIP_PATH install --upgrade pip
-PIP_PATH install git+https://github.com/casics/spiral.git clang
+CLANG_VERSION=$(clang --version | grep -oP 'clang version \K[0-9]+\.[0-9]+' | head -1)
+
+if [ -z "$CLANG_VERSION" ]; then
+    echo "❌ clang sürümü tespit edilemedi."
+    exit 1
+fi
+
+conda run -n "$ENV_NAME" pip uninstall clang -y
+conda run -n "$ENV_NAME" pip install --upgrade pip
+conda run -n "$ENV_NAME" pip install git+https://github.com/casics/spiral.git clang=="$CLANG_VERSION"
 
 # --- 4. ALIAS VE YAPILANDIRMA ---
 # Dinamik path belirleme
@@ -49,6 +65,7 @@ fi
 
 echo "------------------------------------------"
 echo "Kurulum Tamamlandı!"
-echo "Yeni komutu kullanmak için: source ~/.bashrc"
-echo "Komut: review-app"
+echo "Yeni komutu kullanmak için:"
+echo "source ~/.bashrc"
+echo "review-app"
 echo "------------------------------------------"
