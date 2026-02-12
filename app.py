@@ -171,7 +171,7 @@ class NLPLinterGUI:
         btn_frame = ttk.Frame(main_container, padding=5)
         btn_frame.pack(fill="x", pady=10)
 
-        ttk.Button(btn_frame, text="Start", command=self.scan_files).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Review", command=self.scan_files).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Apply", command=self.apply_changes).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Roll back", command=self.restore_backup).pack(side="right", padx=5)
 
