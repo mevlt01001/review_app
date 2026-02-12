@@ -3,6 +3,7 @@ import sys
 import json
 import shutil
 import re
+import argparse
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font as tkfont
 from clang import cindex
@@ -60,7 +61,7 @@ def to_format(words:str, target_format):
         return "_".join(w.lower() for w in words)
 
 class NLPLinterGUI:
-    def __init__(self, root):
+    def __init__(self, root, path=os.getcwd()):
         self.root = root
         self.root.title("AKSS Refactor Tool")
         self.root.geometry("1150x850")
@@ -71,7 +72,7 @@ class NLPLinterGUI:
         
         # --- FONT VE STİL AYARLARI ---
         self._apply_style()
-        self._setup_ui()
+        self._setup_ui(path)
 
     def _apply_style(self):
         # Modern bir font ailesi seçelim (Linux'ta genelde DejaVu Sans veya Ubuntu bulunur)
@@ -101,7 +102,7 @@ class NLPLinterGUI:
                         fieldbackground="white")
         style.configure("Treeview.Heading", font=self.bold_font)
 
-    def _setup_ui(self):
+    def _setup_ui(self, path):
         # Ana Konteynır
         main_container = ttk.Frame(self.root, padding=15)
         main_container.pack(fill="both", expand=True)
@@ -112,13 +113,13 @@ class NLPLinterGUI:
 
         # Src Path [cite: 32]
         ttk.Label(path_frame, text="Source:").grid(row=0, column=0, sticky="w", pady=5)
-        self.src_path = tk.StringVar(value=os.getcwd())
+        self.src_path = tk.StringVar(value=os.path.abspath(path))
         ttk.Entry(path_frame, textvariable=self.src_path, font=self.main_font).grid(row=0, column=1, sticky="ew", padx=10)
         ttk.Button(path_frame, text="Browse", command=lambda: self._browse_dir(self.src_path)).grid(row=0, column=2)
 
         # Include Path [cite: 33]
         ttk.Label(path_frame, text="Include:").grid(row=1, column=0, sticky="w", pady=5)
-        self.inc_path = tk.StringVar(value=os.getcwd())
+        self.inc_path = tk.StringVar(value=os.path.abspath(path))
         ttk.Entry(path_frame, textvariable=self.inc_path, font=self.main_font).grid(row=1, column=1, sticky="ew", padx=10)
         ttk.Button(path_frame, text="Browse", command=lambda: self._browse_dir(self.inc_path)).grid(row=1, column=2)
 
@@ -155,8 +156,8 @@ class NLPLinterGUI:
         for col in ("File", "Type", "Old", "New"):
             self.tree.heading(col, text=col, command=lambda _col=col: self.treeview_sort_column(self.tree, _col, False))
         
-        self.tree.column("File", width=200, anchor="w")
-        self.tree.column("Type", width=100, anchor="center")
+        self.tree.column("File", width=235, anchor="w")
+        self.tree.column("Type", width=65, anchor="center")
         self.tree.column("Old", width=300, anchor="w")
         self.tree.column("New", width=300, anchor="w")
         
@@ -175,7 +176,7 @@ class NLPLinterGUI:
         ttk.Button(btn_frame, text="Roll back", command=self.restore_backup).pack(side="right", padx=5)
 
     def _browse_dir(self, var):
-        d = filedialog.askdirectory()
+        d = filedialog.askdirectory(initialdir=var.get())
         if d: var.set(d)
 
     def get_full_include_args(self):
@@ -210,12 +211,14 @@ class NLPLinterGUI:
                         for key, opt in OPTIONS_MAP.items():
                             if node.kind == opt[1]:
                                 old = node.spelling
+                                row = node.location.line
+                                col = node.location.column
                                 if old and old not in self.found_symbols:
                                     words = ronin.split(old)
                                     self.found_symbols[(old, key)] = (words, path)
                                     target_fmt = getattr(self, f"{key}_case").get()
                                     new_name = to_format(words, target_fmt)
-                                    self.tree.insert("", "end", values=(os.path.basename(path), key.upper(), old, new_name))
+                                    self.tree.insert("", "end", values=(f"{os.path.basename(path):<20} [{row},{col}]", key.upper(), old, new_name))
             
             if not self.found_symbols:
                 messagebox.showinfo("Bilgi", "Standarda uymayan isimlendirme bulunamadı.")
@@ -295,10 +298,13 @@ class NLPLinterGUI:
         messagebox.showinfo("Başarılı", "Yedekler başarıyla geri yüklendi.")
 
 if __name__ == "__main__":
-    root = tk.Tk()
 
+    parser = argparse.ArgumentParser(description="Parse a word into subwords using Ronin.")
+    parser.add_argument("--path", type=str, default="./", help="Working Directory")
+    args = parser.parse_args()
+
+    root = tk.Tk()
     default_font = tkfont.nametofont("TkDefaultFont")
     default_font.configure(family="Helvetica", size=10)
-    
-    app = NLPLinterGUI(root)
+    app = NLPLinterGUI(root, args.path)
     root.mainloop()
