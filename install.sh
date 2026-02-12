@@ -1,60 +1,54 @@
 #!/bin/bash
+set -e
 
 ENV_NAME="review-app"
-LIB_PATH="$(pwd)/app.py"
+APP_PATH="$(pwd)/app.py"
+MINICONDA_PATH="$HOME/miniconda3"
 
-sudo apt install curl
 
-# --- 1. MINICONDA KONTROL VE KURULUM ---
 if ! command -v conda &> /dev/null; then
-    echo "Conda bulunamadı. Miniconda kuruluyor..."
-    # Geçici dizine indir
-    MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh"
-    curl -O $MINICONDA_URL
-    bash Miniconda3-latest-Linux-x86_64.sh -b -p $HOME/miniconda
-    
-    # Mevcut oturumda aktif et (Yeniden başlatmaya gerek kalmadan)
-    export PATH="$HOME/miniconda/bin:$PATH"
-    source "$HOME/miniconda/etc/profile.d/conda.sh"
-    conda init bash
-    echo "Miniconda başarıyla kuruldu."
+    echo "Conda not found, please setup..."
+    echo "Installation instructures inside link = https://www.anaconda.com/docs/getting-started/miniconda/install"
+    ARCH=$(uname -m)
+    echo "Detected, using $ARCH architecture. Please concern it"
+    exit
 else
-    echo "Conda zaten yüklü, devam ediliyor..."
-    # Mevcut conda'yı script içinde kullanılabilir hale getir
-    source "$(conda info --base)/etc/profile.d/conda.sh"
+    sudo apt update && sudo apt install -y git curl wget libclang-dev clang
+    echo "Packages completed."
+
+    if conda info --envs | grep -q "$ENV_NAME"; then
+        echo "Environment '$ENV_NAME' already exists, updating..."
+    else
+        echo "Environment '$ENV_NAME' creating..."
+        conda create -n "$ENV_NAME" python=3.10 -y
+    fi
 fi
 
-# --- 2. DEĞİŞKENLERİ TANIMLA ---
-# (Conda kurulduktan sonra yolları almak daha güvenli)
 CONDA_BASE=$(conda info --base)
 PIP_PATH="$CONDA_BASE/envs/$ENV_NAME/bin/pip"
 PYTHON_PATH="$CONDA_BASE/envs/$ENV_NAME/bin/python"
-ALIAS_CMD="alias review-app='$PYTHON_PATH $LIB_PATH'"
+ALIAS_CMD="alias review-app='$PYTHON_PATH $LIB_PATH'" 
 
-# --- 3. ENVIRONMENT İŞLEMLERİ ---
-if conda info --envs | grep -q "$ENV_NAME"; then
-    echo "'$ENV_NAME' zaten mevcut."
-else
-    echo "'$ENV_NAME' oluşturuluyor..."
-    conda create -n "$ENV_NAME" python=3.10 -y
-fi
+# Environment'ı aktif et ve paketleri kur
+conda activate "$ENV_NAME"
+echo "$ENV_NAME packages creating..."
+PIP_PATH install --upgrade pip
+PIP_PATH install git+https://github.com/casics/spiral.git clang
 
-# --- 4. SİSTEM BAĞIMLILIKLARI VE PIP ---
-sudo apt update
-sudo apt install libclang-dev clang -y
+# --- 4. ALIAS VE YAPILANDIRMA ---
+# Dinamik path belirleme
 
-# Env içindeki pip ve paketler
-$PIP_PATH install --upgrade pip
-$PIP_PATH install git+https://github.com/casics/spiral.git clang
-
-# --- 5. ALIAS VE SONUÇ ---
-# Tekrar tekrar eklememek için kontrol ekleyelim
 if ! grep -q "alias review-app=" ~/.bashrc; then
     echo -e "\n# review-app tool\n$ALIAS_CMD" >> ~/.bashrc
     echo "Alias ~/.bashrc dosyasına eklendi."
+else
+    # Eğer alias varsa ama path değiştiyse güncelle
+    sed -i "/alias review-app=/c\\$ALIAS_CMD" ~/.bashrc
+    echo "Alias güncellendi."
 fi
 
 echo "------------------------------------------"
 echo "Kurulum Tamamlandı!"
+echo "Yeni komutu kullanmak için: source ~/.bashrc"
 echo "Komut: review-app"
 echo "------------------------------------------"
