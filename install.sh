@@ -13,7 +13,7 @@ if ! command -v conda &> /dev/null; then
     echo "Detected, using $ARCH architecture. Please concern it"
     exit
 else
-    sudo apt update && sudo apt install -y git curl wget libclang-dev clang
+    sudo apt update && sudo apt install -y git curl wget libclang-dev clang clang-tidy
     echo "Packages completed."
     
     conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
@@ -23,6 +23,7 @@ else
         echo "Environment '$ENV_NAME' already exists, updating..."
     else
         echo "Environment '$ENV_NAME' creating..."
+        conda config --set ssl_verify false 
         conda create -n "$ENV_NAME" python=3.10 -y
     fi
 fi
@@ -47,9 +48,20 @@ if [ -z "$CLANG_VERSION" ]; then
     exit 1
 fi
 
+# Source - https://stackoverflow.com/a/67796873
+# Posted by nirojshrestha019, modified by community. See post 'Timeline' for change history
+# Retrieved 2026-03-02, License - CC BY-SA 4.0
+
+conda run pip config set global.trusted-host \
+    "pypi.org files.pythonhosted.org pypi.python.org" \
+    --trusted-host=pypi.python.org \
+    --trusted-host=pypi.org \
+    --trusted-host=files.pythonhosted.org \
+    --trusted-host=github.com
+
 conda run -n "$ENV_NAME" pip uninstall clang -y
 conda run -n "$ENV_NAME" pip install --upgrade pip
-conda run -n "$ENV_NAME" pip install git+https://github.com/casics/spiral.git clang=="$CLANG_VERSION"
+conda run -n "$ENV_NAME" GIT_SSL_NO_VERIFY=1 pip install git+https://github.com/casics/spiral.git clang=="$CLANG_VERSION"
 
 # --- 4. ALIAS VE YAPILANDIRMA ---
 # Dinamik path belirleme
