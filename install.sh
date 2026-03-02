@@ -61,7 +61,7 @@ conda run pip config set global.trusted-host \
 
 conda run -n "$ENV_NAME" pip uninstall clang -y
 conda run -n "$ENV_NAME" pip install --upgrade pip
-conda run -n "$ENV_NAME" GIT_SSL_NO_VERIFY=1 pip install git+https://github.com/casics/spiral.git clang=="$CLANG_VERSION"
+conda run -n "$ENV_NAME" GIT_SSL_NO_VERIFY=1 pip install git+https://github.com/casics/spiral.git clang=="$CLANG_VERSION" PyYAML fpdf
 
 # --- 4. ALIAS VE YAPILANDIRMA ---
 # Dinamik path belirleme
