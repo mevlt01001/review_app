@@ -236,7 +236,7 @@ class NLPLinterGUI:
                 row, col = 0, 0
                 
                 if not Replacements:
-                    row, col, main_expression = self.get_file_info_at_offset(FilePath, FileOffset, 0)
+                    row, col, main_expression, lexpression = self.get_file_info_at_offset(FilePath, FileOffset, 0)
                 else:
                     for idx, Replacement in enumerate(Replacements):
                         RepFilePath = Replacement.get("FilePath", FilePath)
@@ -244,7 +244,7 @@ class NLPLinterGUI:
                         RepLength = Replacement.get("Length", 0)
                         ReplacementText = Replacement.get("ReplacementText", "")
                         
-                        r_row, r_col, expression = self.get_file_info_at_offset(RepFilePath, RepOffset, RepLength)
+                        r_row, r_col, expression, lexpression = self.get_file_info_at_offset(RepFilePath, RepOffset, RepLength)
                         
                         if idx == 0:
                             row, col = r_row, r_col
@@ -257,7 +257,7 @@ class NLPLinterGUI:
                 file_label = f"{file_name} [{row}, {col}]"
                 Solutions = "\n".join(SolutionList) if SolutionList else "No recommendations."
                 
-                Description = f"Description:\n{Message}\n\nRecommendations:\n{Solutions}"
+                Description = f"Description:\n'''\n{lexpression}\n'''\n{Message}\n\nRecommendations:\n{Solutions}"
 
                 self.tree.insert("", "end", values=(file_label, main_expression, Level, DiagnosticName, Description))
                 
@@ -294,9 +294,7 @@ class NLPLinterGUI:
 
     def run_tidy(self):
         config = {
-            "Checks": "-*,bugprone-*,performance-*,modernize-*,readability-*," \
-                      "-modernize-use-trailing-return-type," \
-                      "-cppcoreguidelines-init-variables",
+            "Checks": "*",
             "CheckOptions": [
                 {'key': OPTIONS_MAP['var'][0], 'value': self.var_case.get()},
                 {'key': OPTIONS_MAP['func'][0], 'value': self.func_case.get()},
@@ -325,10 +323,14 @@ class NLPLinterGUI:
             last_newline = up_to_offset.rfind('\n')
             col = offset - last_newline if last_newline != -1 else offset + 1
             
-            expression = content[offset:offset+length] if length > 0 else "N/A"
-            return row, col, expression
+            expression = content[offset:offset+length] if length > 0 else None
+            r = 20
+            omin = offset - r if offset -r > 0 else offset
+            if omin==offset: r*=2
+            lexpression = content[omin:offset+r]
+            return row, col, expression, lexpression
         except Exception:
-            return 0, 0, "N/A"
+            return 0, 0, "N/A", None
     
     def restore_backup(self):
         messagebox.showinfo("Info", "Restore backup is disabled in this version.")
