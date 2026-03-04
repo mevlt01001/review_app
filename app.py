@@ -12,13 +12,6 @@ from fpdf import FPDF
 import datetime
 import math
 
-# --- LLVM / CLANG AYARI ---
-# conda_lib = os.path.join(sys.prefix, 'lib', 'libclang.so')
-# if os.path.exists(conda_lib):
-#     cindex.Config.set_library_file(conda_lib)
-# else:
-# cindex.Config.set_library_path("/usr/lib/llvm-*/lib")
-
 import collections.abc
 if sys.version_info >= (3, 10):
     import collections
@@ -44,25 +37,6 @@ OPTIONS_MAP = {
     'func': ['readability-identifier-naming.FunctionCase', cindex.CursorKind.FUNCTION_DECL],
     'cls': ['readability-identifier-naming.ClassCase', cindex.CursorKind.CLASS_DECL]
 }
-
-def to_format(words:str, target_format):
-    if not words: return ""
-    if target_format == "lower_case":
-        return "_".join(w.lower() for w in words)
-    elif target_format == "UPPER_CASE":
-        return "_".join(w.upper() for w in words)
-    elif target_format == "camelBack":
-        return "".join(w.lower() if i==0 else w.capitalize() for i, w in enumerate(words))
-    elif target_format == "CamelCase":
-        return "".join(w.capitalize() for w in words)
-    elif target_format == "camel_Snake_Back":
-        return "_".join(w.lower() if i==0 else w.capitalize() for i, w in enumerate(words))
-    elif target_format == "Camel_Snake_Case":
-        return "_".join(w.capitalize() for w in words)
-    elif target_format == "Leading_upper_snake_case":
-        return "_".join(w.capitalize() if i ==0 else w.lower() for i, w in enumerate(words))
-    elif target_format == "aNy_CasE":
-        return "_".join(w.lower() for w in words)
 
 class NLPLinterGUI:
     def __init__(self, root, path=os.getcwd()):
@@ -142,18 +116,17 @@ class NLPLinterGUI:
         details_frame = ttk.Frame(preview_frame)
         details_frame.pack(side="right", fill="both", expand=True, padx=(10, 0))
 
-        columns = ("File", "Expression", "Warn Level", "Category", "Description")
-        self.tree = ttk.Treeview(tree_frame, columns=columns, show='headings', displaycolumns=("File", "Expression", "Warn Level", "Category"))
+        # EXPRESSION KALDIRILDI
+        columns = ("File", "Warn Level", "Category", "Description")
+        self.tree = ttk.Treeview(tree_frame, columns=columns, show='headings', displaycolumns=("File", "Warn Level", "Category"))
         
         self.tree.heading("File", text="File", command=lambda: self.treeview_sort_column(self.tree, "File", False))
-        self.tree.heading("Expression", text="Expression", command=lambda: self.treeview_sort_column(self.tree, "Expression", False))
         self.tree.heading("Warn Level", text="Warn Level", command=lambda: self.treeview_sort_column(self.tree, "Warn Level", False))
         self.tree.heading("Category", text="Category", command=lambda: self.treeview_sort_column(self.tree, "Category", False))
         
-        self.tree.column("File", width=160, anchor="w")
-        self.tree.column("Expression", width=140, anchor="center")
-        self.tree.column("Warn Level", width=100, anchor="center")
-        self.tree.column("Category", width=180, anchor="w")
+        self.tree.column("File", width=150, anchor="w")
+        self.tree.column("Warn Level", width=65, anchor="center")
+        self.tree.column("Category", width=200, anchor="w")
         
         self.tree.pack(side="left", fill="both", expand=True)
         
@@ -161,14 +134,27 @@ class NLPLinterGUI:
         self.tree.configure(yscroll=tree_scroll.set)
         tree_scroll.pack(side="right", fill="y")
 
-        self.details_text = tk.Text(details_frame, wrap="word", font=("FreeMono", 14), bg="#ffffff")
+        # TERMİNAL TASARIMI: Koyu arka plan ve açık gri yazı
+        self.details_text = tk.Text(details_frame, wrap="none", font=("Courier", 12), bg="#1e1e1e", fg="#d4d4d4")
         self.details_text.pack(side="left", fill="both", expand=True)
-        self.details_text.insert("1.2", "Click on a row to see details...")
+        
+        # TERMİNAL RENKLERİ (Tag Konfigürasyonları)
+        self.details_text.tag_configure("bold_path", font=("Courier", 12, "bold"), foreground="#ffffff")
+        self.details_text.tag_configure("warning_tag", foreground="#ff55ff", font=("Courier", 12, "bold")) # Pembe
+        self.details_text.tag_configure("error_tag", foreground="#ff5555", font=("Courier", 12, "bold"))   # Kırmızı
+        self.details_text.tag_configure("pointer_tag", foreground="#55ff55", font=("Courier", 12, "bold")) # Yeşil Oklar
+        self.details_text.tag_configure("suggestion_tag", foreground="#55ff55", font=("Courier", 12))      # Yeşil Öneri
+
+        self.details_text.insert("1.0", "Click on a row to see details...")
         self.details_text.config(state="disabled")
 
-        text_scroll = ttk.Scrollbar(details_frame, orient="vertical", command=self.details_text.yview)
-        self.details_text.configure(yscrollcommand=text_scroll.set)
-        text_scroll.pack(side="right", fill="y")
+        text_scroll_y = ttk.Scrollbar(details_frame, orient="vertical", command=self.details_text.yview)
+        self.details_text.configure(yscrollcommand=text_scroll_y.set)
+        text_scroll_y.pack(side="right", fill="y")
+        
+        text_scroll_x = ttk.Scrollbar(details_frame, orient="horizontal", command=self.details_text.xview)
+        self.details_text.configure(xscrollcommand=text_scroll_x.set)
+        text_scroll_x.pack(side="bottom", fill="x")
 
         self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
 
@@ -192,6 +178,34 @@ class NLPLinterGUI:
         if extra:
             paths.extend(extra.split())
         return [f'-I{p}' for p in paths]
+
+    def get_file_info_at_offset(self, filepath, offset):
+        """ Offsete göre Satır No, Görsel Sütun No (Tabları hesaba katar) ve Tüm Satırı döndürür """
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            up_to_offset = content[:offset]
+            row = up_to_offset.count('\n') + 1
+            last_newline = up_to_offset.rfind('\n')
+            
+            # Offsetten önceki asıl metin (aynı satırdaki)
+            line_prefix = up_to_offset[last_newline + 1:]
+            
+            # HİZALAMA İÇİN KRİTİK NOKTA: Tab karakterini 4 boşluk saymalıyız
+            visual_col = len(line_prefix.expandtabs(4)) + 1
+            
+            omin = last_newline + 1 if last_newline != -1 else 0
+            omax = content.find('\n', offset)
+            if omax == -1:
+                omax = len(content)
+                
+            # Gösterilecek tam satır (Yine tabları boşluğa çeviriyoruz ki terminalde hizalansın)
+            full_line = content[omin:omax].expandtabs(4)
+
+            return row, visual_col, full_line
+        except Exception:
+            return 0, 0, "N/A"
 
     def scan_files(self):
         try:
@@ -217,7 +231,7 @@ class NLPLinterGUI:
                 DiagnosticName = Diagnostic.get("DiagnosticName", "Unknown")
                 DiagnosticMessage = Diagnostic.get("DiagnosticMessage", {})
                 Message = DiagnosticMessage.get("Message", "No description")
-                Level = Diagnostic.get("Level", "Unknown")
+                Level = Diagnostic.get("Level", "Unknown").lower()
                 
                 FilePath = DiagnosticMessage.get("FilePath", "")
                 FileOffset = DiagnosticMessage.get("FileOffset", 0)
@@ -231,35 +245,47 @@ class NLPLinterGUI:
                         if note_replacements:
                             Replacements.extend(note_replacements)
 
-                SolutionList = []
-                main_expression = "N/A"
-                row, col = 0, 0
+                row, col, full_line = self.get_file_info_at_offset(FilePath, FileOffset)
                 
-                if not Replacements:
-                    row, col, main_expression, lexpression = self.get_file_info_at_offset(FilePath, FileOffset, 0)
-                else:
-                    for idx, Replacement in enumerate(Replacements):
+                # Başlık Satırı (Terminal benzeri)
+                header = f"{FilePath}:{row}:{col}: {Level}: {Message}"
+                desc_lines = [header, full_line]
+
+                if Replacements:
+                    for Replacement in Replacements:
                         RepFilePath = Replacement.get("FilePath", FilePath)
                         RepOffset = Replacement.get("Offset", 0)
                         RepLength = Replacement.get("Length", 0)
-                        ReplacementText = Replacement.get("ReplacementText", "")
+                        RepText = Replacement.get("ReplacementText", "")
                         
-                        r_row, r_col, expression, lexpression = self.get_file_info_at_offset(RepFilePath, RepOffset, RepLength)
+                        r_row, r_col, r_full_line = self.get_file_info_at_offset(RepFilePath, RepOffset)
                         
-                        if idx == 0:
-                            row, col = r_row, r_col
-                            main_expression = expression
-                            
-                        solution = f"Use '{ReplacementText}' instead of '{expression}' at {os.path.basename(RepFilePath)} [{r_row}, {r_col}]"
-                        SolutionList.append(solution)
+                        # Eğer değişiklik başka satırdaysa onu da ekrana bas
+                        if r_row != row:
+                            desc_lines.append(f"{RepFilePath}:{r_row}:{r_col}: note: fix applied here")
+                            desc_lines.append(r_full_line)
+                        
+                        # Terminal oklarını (^~~) oluştur
+                        spaces = " " * (r_col - 1)
+                        tildes = "~" * (RepLength - 1) if RepLength > 1 else ("~" if RepLength == 1 else "")
+                        pointer_line = f"{spaces}^{tildes}"
+                        
+                        desc_lines.append(pointer_line)
+                        if RepText:
+                            # Çok satırlı önerileri düzgün hizala
+                            formatted_rep = RepText.replace('\n', '\n' + spaces)
+                            desc_lines.append(f"{spaces}{formatted_rep}")
+                else:
+                    # Replacement yoksa sadece hatanın yerini göster
+                    spaces = " " * (col - 1)
+                    desc_lines.append(f"{spaces}^")
 
-                file_name = os.path.basename(FilePath) if FilePath else "Unknown"
-                file_label = f"{file_name} [{row}, {col}]"
-                Solutions = "\n".join(SolutionList) if SolutionList else "No recommendations."
-                
-                Description = f"Description:\n'''\n{lexpression}\n'''\n{Message}\n\nRecommendations:\n{Solutions}"
+                file_name = FilePath if FilePath else "Unknown"
+                file_label = f"{os.path.basename(file_name)}"
+                Description = "\n".join(desc_lines)
 
-                self.tree.insert("", "end", values=(file_label, main_expression, Level, DiagnosticName, Description))
+                # TREEVIEW'DA ARTIK EXPRESSION YOK (Sadece 4 argüman var)
+                self.tree.insert("", "end", values=(file_label, Level.capitalize(), DiagnosticName, Description))
                 
             messagebox.showinfo("Done", "Scan completed.")
             
@@ -281,12 +307,41 @@ class NLPLinterGUI:
         item = self.tree.item(selected_items[0])
         values = item['values']
         
-        if len(values) >= 5:
-            description = values[4]
+        # Expression kalktığı için description artık 3. indexte (0,1,2,3)
+        if len(values) >= 4:
+            description = values[3]
             
             self.details_text.config(state="normal")
             self.details_text.delete("1.0", tk.END)
-            self.details_text.insert(tk.END, description)
+            
+            lines = description.split('\n')
+            is_suggestion = False
+            
+            for line in lines:
+                # Başlık satırı kontrolü
+                header_match = re.match(r"^([^:]+:\d+:\d+:)\s+(warning|error|note):\s+(.*)$", line)
+                
+                if header_match:
+                    self.details_text.insert(tk.END, header_match.group(1) + " ", "bold_path")
+                    level = header_match.group(2)
+                    tag = "warning_tag" if level == "warning" else ("error_tag" if level == "error" else "bold_path")
+                    self.details_text.insert(tk.END, level + ": ", tag)
+                    self.details_text.insert(tk.END, header_match.group(3) + "\n", "bold_path")
+                    is_suggestion = False
+                
+                # İşaretçi satırı (^ ve ~ karakterleri)
+                elif re.match(r"^\s*[\^~]+\s*$", line):
+                    self.details_text.insert(tk.END, line + "\n", "pointer_tag")
+                    is_suggestion = True
+                    
+                # Öneri satırı (İşaretçinin hemen altı)
+                elif is_suggestion:
+                    self.details_text.insert(tk.END, line + "\n", "suggestion_tag")
+                    is_suggestion = False 
+                    
+                else:
+                    self.details_text.insert(tk.END, line + "\n")
+
             self.details_text.config(state="disabled")
 
     def apply_changes(self):
@@ -312,29 +367,30 @@ class NLPLinterGUI:
         )
         print("Running command:", cmd)
         os.system(cmd)
-
-    def get_file_info_at_offset(self, filepath, offset, length=0):
-        try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            up_to_offset = content[:offset]
-            row = up_to_offset.count('\n') + 1
-            last_newline = up_to_offset.rfind('\n')
-            col = offset - last_newline if last_newline != -1 else offset + 1
-            
-            expression = content[offset:offset+length] if length > 0 else None
-            r = 20
-            omin = offset - r if offset -r > 0 else offset
-            if omin==offset: r*=2
-            lexpression = content[omin:offset+r]
-            return row, col, expression, lexpression
-        except Exception:
-            return 0, 0, "N/A", None
     
     def restore_backup(self):
         messagebox.showinfo("Info", "Restore backup is disabled in this version.")
     
+    def _calculate_pdf_lines(self, pdf, text, col_width):
+        """FPDF için hassas satır kaydırma hesabı"""
+        lines = 0
+        for paragraph in str(text).split('\n'):
+            if not paragraph.strip() and paragraph == "": # Tamamen boş satırlar için
+                lines += 1
+                continue
+            words = paragraph.split(' ')
+            current_line = ""
+            for word in words:
+                test_line = current_line + word + " " if current_line else word + " "
+                if pdf.get_string_width(test_line) > (col_width - 4): 
+                    lines += 1
+                    current_line = word + " "
+                else:
+                    current_line = test_line
+            if current_line:
+                lines += 1
+        return max(1, lines)
+
     def export_pdf(self):
         if not self.tree.get_children():
             messagebox.showwarning("Warning", "No data to export. Run scan first.")
@@ -348,7 +404,6 @@ class NLPLinterGUI:
         pdf.cell(0, 10, "AKSS Refactor Tool - Static Code Analysis Report", ln=True, align='C')
         pdf.ln(5)
         
-        # Metadata Injection
         pdf.set_font("Arial", '', 10)
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         pdf.cell(0, 6, f"Generated On: {current_time}", ln=True)
@@ -360,14 +415,13 @@ class NLPLinterGUI:
         pdf.cell(0, 6, f"Format Standards -> Variable: {self.var_case.get()} | Function: {self.func_case.get()} | Class: {self.cls_case.get()}", ln=True)
         pdf.ln(8)
         
-        # Columns Configuration (Total Width: 277mm for A4 Landscape)
+        # EXPRESSION SÜTUNU KALDIRILDI, GENİŞLİKLER GÜNCELLENDİ (Toplam 277mm)
         pdf.set_font("Arial", 'B', 9)
         cols = [
-            ("File", 45), 
-            ("Expression", 40), 
-            ("Warn Level", 25), 
-            ("Category", 50), 
-            ("Details (Description & Recs)", 117)
+            ("File", 35), 
+            ("Warn Level", 20), 
+            ("Category", 55), 
+            ("Details (Description & Recs)", 165) 
         ]
         
         for name, width in cols:
@@ -381,27 +435,27 @@ class NLPLinterGUI:
                 res = res.replace(k, v)
             return res.encode('latin-1', 'ignore').decode('latin-1')
 
-        pdf.set_font("Arial", '', 8)
-        line_height = 5
+        line_height = 4.5 # Monospace font biraz daha sıkı olduğu için satır boyunu hafif kısalttık
 
         for item in self.tree.get_children():
             values = self.tree.item(item, 'values')
             row_data = [safe_txt(v) for v in values]
             
-            # Calculate dynamic row height based on the tallest cell
             max_lines = 1
             for idx, text in enumerate(row_data):
                 width = cols[idx][1]
-                lines = 0
-                for paragraph in text.split('\n'):
-                    text_w = pdf.get_string_width(paragraph)
-                    lines += max(1, math.ceil(text_w / (width - 2)))
+                # YÜKSEKLİK HESABI İÇİN FONT SET EDİLMELİ
+                if idx == 3: # Artık Description 3. Sütun!
+                    pdf.set_font("Courier", '', 7)
+                else:
+                    pdf.set_font("Arial", '', 8)
+                    
+                lines = self._calculate_pdf_lines(pdf, text, width)
                 if lines > max_lines:
                     max_lines = lines
                     
             row_height = max_lines * line_height
 
-            # Page break protection
             if pdf.get_y() + row_height > pdf.page_break_trigger:
                 pdf.add_page()
 
@@ -411,31 +465,29 @@ class NLPLinterGUI:
             for idx, text in enumerate(row_data):
                 width = cols[idx][1]
                 
-                # Draw strict boundaries for the cell
                 pdf.rect(x_start, y_start, width, row_height)
                 
-                if idx < 4:
-                    # Centering mathematically for single/short text
+                if idx < 3: # İlk 3 sütun
+                    pdf.set_font("Arial", '', 8)
                     text_w = pdf.get_string_width(text)
                     if text_w < width - 2 and '\n' not in text:
                         y_offset = (row_height - line_height) / 2
                         pdf.set_xy(x_start, y_start + y_offset)
                         pdf.cell(width, line_height, text, align='C')
                     else:
-                        # Fallback centering for slightly longer expressions
                         lines = max(1, math.ceil(text_w / (width - 2)))
                         text_height = lines * line_height
                         y_offset = (row_height - text_height) / 2
                         pdf.set_xy(x_start, y_start + y_offset)
                         pdf.multi_cell(width, line_height, text, align='C')
                 else:
-                    # Description alignment (top-left aligned for paragraphs)
-                    pdf.set_xy(x_start, y_start + 1)
-                    pdf.multi_cell(width, line_height, text, align='L')
+                    # DESCRIPTION SÜTUNU: Tam Terminal Hizalaması için Courier Font
+                    pdf.set_font("Courier", '', 7)
+                    pdf.set_xy(x_start + 2, y_start + 1)
+                    pdf.multi_cell(width - 4, line_height, text, align='L')
 
                 x_start += width
 
-            # Move pointer down to the next row dynamically
             pdf.set_y(y_start + row_height)
             
         try:
